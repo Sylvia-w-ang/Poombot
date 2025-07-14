@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PoomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@500&family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
+  <link rel="icon" href="https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f977.png">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1635988162/pose.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466862/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js"></script>
+  <style>
+    :root {
+      --primary-bg: linear-gradient(135deg, #181c2f 0%, #23234a 100%);
+      --glass-bg: rgba(36, 39, 70, 0.65);
+      --glass-blur: blur(24px);
+      --accent: #ffd700;
+      --accent2: #60a5fa;
+      --success: #4ade80;
+      --error: #f87171;
+      --panel-shadow: 0 8px 32px rgba(16, 16, 32, 0.18);
+      --border: 1.5px solid rgba(255,255,255,0.10);
+      --radius: 20px;
+      --font-main: 'Inter', Arial, sans-serif;
+      --font-heading: 'Montserrat', Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+    html, body {
+      height: 100%;
+      min-height: 100vh;
+      background: var(--primary-bg);
+      color: #f3f4fa;
+      font-family: var(--font-main);
+      letter-spacing: 0.01em;
+      -webkit-font-smoothing: antialiased;
+      overflow: auto;
+    }
+    .app-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr 350px;
+      grid-template-rows: 120px 1fr;
+      height: 100vh;
+      gap: 0;
+      row-gap: 1cm;
+    }
+    .header {
+      grid-column: 1 / -1;
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 2rem 1.5rem 2rem;
+      min-height: 120px;
+      z-index: 2;
+      box-sizing: border-box;
+    }
+    .header h1 {
+      font-size: 2.8rem;
+      font-weight: 900;
+      font-family: var(--font-heading);
+      color: #ffd700;
+      letter-spacing: 2px;
+      margin-bottom: 0.2em;
+      margin-top: 0.1em;
+      line-height: 1.1;
+      text-align: center;
+      text-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+      background: linear-gradient(135deg, #ffd700 0%, #ffed4e 50%, #ffd700 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header .tagline {
+      font-size: 1.1rem;
+      color: #60a5fa;
+      letter-spacing: 1.1px;
+      font-weight: 600;
+      margin-bottom: 0.1em;
+      margin-top: 0.1em;
+      text-align: center;
+    }
+    .header .subtitle {
+      font-size: 0.98rem;
+      color: #b6b8e6;
+      letter-spacing: 1px;
+      font-weight: 500;
+      margin-bottom: 0.1em;
+      margin-top: 0.1em;
+      text-align: center;
+    }
+    .video-panel, .skeleton-panel, .status-panel {
+      background: var(--glass-bg);
+      backdrop-filter: var(--glass-blur);
+      border: var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--panel-shadow);
+      margin: 22px 14px 22px 14px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding-bottom: 2.1rem;
+      box-sizing: border-box;
+    }
+    .panel-title {
+      font-size: 1.18rem;
+      font-weight: 800;
+      color: var(--accent2);
+      text-transform: uppercase;
+      letter-spacing: 1.7px;
+      margin-bottom: 1.2rem;
+      margin-top: 0.7rem;
+      font-family: var(--font-heading);
+      text-shadow: 0 1px 8px #0003;
+      text-align: center;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.5em;
+    }
+    .status-panel .panel-title {
+      font-size: 1rem;
+      margin-bottom: 0.8rem;
+      margin-top: 0.4rem;
+      min-height: 1.8em;
+    }
+    .video-panel, .skeleton-panel {
+      justify-content: flex-start;
+    }
+    .status-panel {
+      background: rgba(255, 255, 255, 0.02);
+      padding: 0.8rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .status-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .status-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 0.5rem;
+    }
+    .status-card h4 {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #8b8b8b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.3rem;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.9rem;
+      color: #ffffff;
+      font-family: var(--font-main);
+    }
+    .status-indicator.success {
+      color: var(--success);
+    }
+    .status-indicator.error {
+      color: var(--error);
+    }
+    .status-indicator.warning {
+      color: #fbbf24;
+    }
+    .pose-stats {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.4;
+      color: #e6e8f7;
+      letter-spacing: 0.01em;
+      min-height: 0;
+    }
+    .pose-stats strong {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .contact-item {
+      background: rgba(59, 130, 246, 0.13);
+      border: 1px solid rgba(59, 130, 246, 0.18);
+      border-radius: 6px;
+      padding: 0.4rem 0.7rem;
+      margin: 0.1rem 0;
+      font-size: 0.8rem;
+      color: var(--accent2);
+      font-family: var(--font-mono);
+      display: inline-block;
+      min-width: 90px;
+      min-height: 0;
+    }
+    @media (max-width: 1200px) {
+      .app-container {
+        grid-template-columns: 1fr 1fr 1fr;
+        padding: 0 0.2vw;
+      }
+    }
+    @media (max-width: 900px) {
+      .app-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 140px 1fr 1fr auto;
+        padding: 0 0.1vw;
+      }
+      .video-panel, .skeleton-panel, .status-panel {
+        margin: 10px 4px 10px 4px;
+        padding-bottom: 1.2rem;
+      }
+      .header h1 {
+        font-size: 1.7rem;
+      }
+      .status-content {
+        grid-template-columns: 1fr;
+        gap: 0.7rem 0;
+      }
+    }
+    .video-panel {
+      background: rgba(255, 255, 255, 0.02);
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .skeleton-panel {
+      background: rgba(255, 255, 255, 0.02);
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .video-container, .skeleton-container {
+      flex: 1;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #181a2e;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      margin-bottom: 0.5rem;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      border-radius: 12px;
+      aspect-ratio: 9/16;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+    .skeleton-container {
+      flex: 1;
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: linear-gradient(145deg, #1a1a2e, #16213e);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: stretch;
+      aspect-ratio: 9/16;
+    }
+    #skeleton-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      border-radius: 12px;
+      transform: scaleX(-1);
+      object-fit: cover;
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="header">
+      <h1>PoomBot</h1>
+      <div class="tagline" style="font-size:1.1rem;color:#60a5fa;margin-top:0.2em;">“Train Smarter. Master Faster.”</div>
+      <div class="subtitle" style="font-size:0.98rem;color:#b6b8e6;margin-top:0.1em;">Your digital twin for perfect poomsae.</div>
+    </header>
+    
+    <div class="video-panel">
+      <div class="panel-title">Live Camera Feed</div>
+      <div class="video-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+      </div>
+    </div>
+    
+    <div class="skeleton-panel">
+      <div class="panel-title">Digital Skeleton</div>
+      <div class="skeleton-container">
+        <canvas id="skeleton-canvas"></canvas>
+      </div>
+    </div>
+    
+    <div class="status-panel">
+      <div class="panel-title">System Status</div>
+      <div class="status-content">
+        <div class="status-card">
+          <h4>Detection Status</h4>
+          <div id="status" class="status-indicator warning">
+            <span class="status-icon">⏳</span>
+            <span class="status-text">Initializing pose detection...</span>
+          </div>
+          <div id="error" class="status-indicator error" style="display: none;">
+            <span class="status-icon">⚠️</span>
+            <span class="status-text"></span>
+          </div>
+        </div>
+        <div class="status-card">
+          <h4>Pose Statistics</h4>
+          <div class="pose-stats">
+            <div id="pose-stats">Waiting for pose data...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const skeletonCanvas = document.getElementById('skeleton-canvas');
+    const skeletonCtx = skeletonCanvas.getContext('2d');
+    const status = document.getElementById('status');
+    const error = document.getElementById('error');
+    const poseStats = document.getElementById('pose-stats');
+
+    let pose;
+    let camera;
+    let hands;
+    let latestHandResults = null;
+
+    async function initPoseDetection() {
+      try {
+        console.log('Initializing pose detection...');
+        
+        // Initialize MediaPipe Pose
+        pose = new Pose({
+          locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1635988162/${file}`;
+          }
+        });
+
+        pose.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.3, // Lower threshold for better detection
+          minTrackingConfidence: 0.3
+        });
+
+        pose.onResults(onPoseResults);
+
+        // Initialize MediaPipe Hands
+        hands = new Hands({
+          locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`;
+          }
+        });
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        hands.onResults(onHandsResults);
+
+        // Initialize camera
+        camera = new Camera(video, {
+          onFrame: async () => {
+            await pose.send({image: video});
+            await hands.send({image: video});
+          },
+          width: 360,
+          height: 640
+        });
+
+        await camera.start();
+        status.className = 'status-indicator success';
+        status.innerHTML = '<span class="status-icon">✅</span><span class="status-text">Pose detection active</span>';
+        console.log('Pose and Hands detection initialized successfully');
+        
+      } catch (err) {
+        console.error("Pose/Hands detection error:", err);
+        status.className = 'status-indicator error';
+        status.innerHTML = '<span class="status-icon">❌</span><span class="status-text">Pose/Hands detection failed</span>';
+        error.className = 'status-indicator error';
+        error.innerHTML = '<span class="status-icon">⚠️</span><span class="status-text">' + (err.message || "Unknown error") + '</span>';
+        error.style.display = 'flex';
+      }
+    }
+
+    function onPoseResults(results) {
+      // Set canvas dimensions to match video exactly
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+      
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+      skeletonCanvas.width = videoWidth;
+      skeletonCanvas.height = videoHeight;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      skeletonCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+      
+      if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+        console.log('Landmarks detected:', results.poseLandmarks.length);
+        
+        // Draw pose landmarks on video overlay
+        if (typeof drawConnectors !== 'undefined' && typeof POSE_CONNECTIONS !== 'undefined') {
+          drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS,
+                        {color: '#00FF00', lineWidth: 2});
+          drawLandmarks(ctx, results.poseLandmarks,
+                       {color: '#FF0000', lineWidth: 1, radius: 3});
+        }
+        
+        // Draw skeleton twin on the right
+        drawSkeletonTwin(results.poseLandmarks);
+        
+        // Update pose statistics
+        updatePoseStats(results.poseLandmarks);
+      } else {
+        console.log('No landmarks detected, drawing basic skeleton');
+        drawBasicSkeleton();
+      }
+    }
+
+    function onHandsResults(results) {
+      latestHandResults = results;
+    }
+
+    function classifyFistOrOther(handLandmarks) {
+      // Fist: all finger tips close to their MCPs
+      function dist(a, b) {
+        return Math.sqrt(
+          Math.pow(a.x - b.x, 2) +
+          Math.pow(a.y - b.y, 2)
+        );
+      }
+      const tipMCPDistances = [
+        dist(handLandmarks[4], handLandmarks[2]),   // thumb tip to thumb MCP
+        dist(handLandmarks[8], handLandmarks[5]),   // index tip to index MCP
+        dist(handLandmarks[12], handLandmarks[9]),  // middle tip to middle MCP
+        dist(handLandmarks[16], handLandmarks[13]), // ring tip to ring MCP
+        dist(handLandmarks[20], handLandmarks[17])  // pinky tip to pinky MCP
+      ];
+      const avgTipMCP = tipMCPDistances.reduce((a, b) => a + b, 0) / tipMCPDistances.length;
+      // Stricter threshold: <0.05 is a fist, else other
+      if (avgTipMCP < 0.05) return 'Fist';
+      return 'Other';
+    }
+
+    function drawSkeletonTwin(landmarks) {
+      // Clear the skeleton canvas
+      skeletonCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+      
+      // Calculate body proportions for this person
+      const bodyProportions = calculateBodyProportions(landmarks);
+      
+      // Helper function to check if a landmark is within the visible area
+      function isLandmarkVisible(landmark) {
+        if (!landmark || landmark.visibility < 0.2) return false;
+        
+        // Convert normalized coordinates to pixel coordinates
+        const x = landmark.x * skeletonCanvas.width;
+        const y = landmark.y * skeletonCanvas.height;
+        
+        // Check if the landmark is within the canvas bounds
+        return x >= 0 && x <= skeletonCanvas.width && y >= 0 && y <= skeletonCanvas.height;
+      }
+
+      // --- HEAD SIZE BASED ON ACTUAL HEAD WIDTH ---
+      let headRadius = bodyProportions.headSize;
+      
+      // Always try to use actual head width from ear landmarks for perfect 1:1 ratio
+      if (
+        landmarks[7] && landmarks[8] &&
+        landmarks[7].visibility > 0.2 && landmarks[8].visibility > 0.2
+      ) {
+        // Use distance between left ear (7) and right ear (8) as head width
+        const leftEarX = landmarks[7].x * skeletonCanvas.width;
+        const leftEarY = landmarks[7].y * skeletonCanvas.height;
+        const rightEarX = landmarks[8].x * skeletonCanvas.width;
+        const rightEarY = landmarks[8].y * skeletonCanvas.height;
+        const headWidth = Math.sqrt(
+          Math.pow(leftEarX - rightEarX, 2) +
+          Math.pow(leftEarY - rightEarY, 2)
+        );
+        headRadius = headWidth / 2;
+        
+        // Ensure minimum and maximum reasonable head sizes
+        const minHeadRadius = 15;
+        const maxHeadRadius = 80;
+        headRadius = Math.max(minHeadRadius, Math.min(maxHeadRadius, headRadius));
+      } else if (
+        landmarks[1] && landmarks[2] &&
+        landmarks[1].visibility > 0.2 && landmarks[2].visibility > 0.2
+      ) {
+        // Fallback: use distance between left and right eye inner corners
+        const leftEyeX = landmarks[1].x * skeletonCanvas.width;
+        const leftEyeY = landmarks[1].y * skeletonCanvas.height;
+        const rightEyeX = landmarks[2].x * skeletonCanvas.width;
+        const rightEyeY = landmarks[2].y * skeletonCanvas.height;
+        const eyeDistance = Math.sqrt(
+          Math.pow(leftEyeX - rightEyeX, 2) +
+          Math.pow(leftEyeY - rightEyeY, 2)
+        );
+        // Eye distance is roughly 1/3 of head width
+        headRadius = (eyeDistance * 1.5);
+      }
+      // -------------------------------------------
+
+      // Draw skeleton connections with proportional sizing
+      skeletonCtx.strokeStyle = '#00FFFF'; // Cyan color for skeleton
+      skeletonCtx.lineWidth = bodyProportions.lineWidth;
+      skeletonCtx.lineCap = 'round';
+      
+      // Real anatomical connections only
+      const connections = [
+        // Shoulders
+        [11, 12], // left to right shoulder
+        
+        // Arms with elbows (longer arms extending to fingertips)
+        [11, 13], [13, 15], [15, 17], // left arm: shoulder to elbow to wrist to middle finger
+        [12, 14], [14, 16], [16, 18], // right arm: shoulder to elbow to wrist to middle finger
+        
+        // Torso
+        [11, 23], [12, 24], // shoulders to hips
+        [23, 24], // hips
+        
+        // Legs with knee and ankle joints
+        [23, 25], [25, 27], [27, 29], [29, 31], // left leg: hip to knee to ankle to foot
+        [24, 26], [26, 28], [28, 30], [30, 32], // right leg: hip to knee to ankle to foot
+      ];
+      
+      // Draw neck line first (shorter neck from head to center of shoulders)
+      if (landmarks[0] && landmarks[11] && landmarks[12] && 
+          landmarks[0].visibility > 0.3 && landmarks[11].visibility > 0.3 && landmarks[12].visibility > 0.3) {
+        const headX = landmarks[0].x * skeletonCanvas.width;
+        const headY = landmarks[0].y * skeletonCanvas.height;
+        const leftShoulderX = landmarks[11].x * skeletonCanvas.width;
+        const leftShoulderY = landmarks[11].y * skeletonCanvas.height;
+        const rightShoulderX = landmarks[12].x * skeletonCanvas.width;
+        const rightShoulderY = landmarks[12].y * skeletonCanvas.height;
+        
+        // Calculate center of shoulder line
+        const shoulderCenterX = (leftShoulderX + rightShoulderX) / 2;
+        const shoulderCenterY = (leftShoulderY + rightShoulderY) / 2;
+        
+        // Only draw neck if head is visible in the frame
+        if (isLandmarkVisible(landmarks[0])) {
+          skeletonCtx.beginPath();
+          skeletonCtx.moveTo(headX, headY);
+          skeletonCtx.lineTo(shoulderCenterX, shoulderCenterY);
+          skeletonCtx.stroke();
+        }
+      }
+      
+      // Draw all other connections
+      connections.forEach(([start, end]) => {
+        if (landmarks[start] && landmarks[end] && 
+            landmarks[start].visibility > 0.3 && landmarks[end].visibility > 0.3) {
+          const startX = landmarks[start].x * skeletonCanvas.width;
+          const startY = landmarks[start].y * skeletonCanvas.height;
+          const endX = landmarks[end].x * skeletonCanvas.width;
+          const endY = landmarks[end].y * skeletonCanvas.height;
+          
+          // Only draw connection if both endpoints are visible
+          if (isLandmarkVisible(landmarks[start]) && isLandmarkVisible(landmarks[end])) {
+            skeletonCtx.beginPath();
+            skeletonCtx.moveTo(startX, startY);
+            skeletonCtx.lineTo(endX, endY);
+            skeletonCtx.stroke();
+          }
+        }
+      });
+
+      // Draw all joint points
+      skeletonCtx.fillStyle = '#FFD700'; // Gold color for joints
+      landmarks.forEach((landmark, index) => {
+        if (landmark && landmark.visibility > 0.3 && isLandmarkVisible(landmark)) {
+          const x = landmark.x * skeletonCanvas.width;
+          const y = landmark.y * skeletonCanvas.height;
+          // Head as a circle (landmark 0) - use actual head size
+          if (index === 0) {
+            skeletonCtx.beginPath();
+            skeletonCtx.arc(x, y, headRadius, 0, 2 * Math.PI);
+            skeletonCtx.fill();
+          }
+          // Main anatomical joints - proportional size
+          else if (index === 11 || index === 12 || // shoulders
+                   index === 13 || index === 14 || // elbows
+                   index === 15 || index === 16 || // wrists
+                   index === 23 || index === 24 || // hips
+                   index === 25 || index === 26 || // knees
+                   index === 27 || index === 28 || // ankles
+                   index === 29 || index === 30) { // feet
+            // For wrists, color by hand shape if available
+            if ((index === 15 || index === 16) && latestHandResults && latestHandResults.multiHandLandmarks && latestHandResults.multiHandedness) {
+              // MIRRORED: If handedness is 'Left', color index 16; if 'Right', color index 15
+              let targetHand = null;
+              for (let i = 0; i < latestHandResults.multiHandLandmarks.length; i++) {
+                const handedness = latestHandResults.multiHandedness[i].label; // 'Left' or 'Right' (real person)
+                if ((index === 15 && handedness === 'Right') || (index === 16 && handedness === 'Left')) {
+                  targetHand = latestHandResults.multiHandLandmarks[i];
+                  break;
+                }
+              }
+              if (targetHand) {
+                const handType = classifyFistOrOther(targetHand);
+                let color = '#FFD700';
+                if (handType === 'Fist') color = '#FF4444';
+                skeletonCtx.beginPath();
+                skeletonCtx.arc(x, y, bodyProportions.jointSize + 4, 0, 2 * Math.PI);
+                skeletonCtx.fillStyle = color;
+                skeletonCtx.fill();
+                skeletonCtx.fillStyle = '#FFD700'; // reset for other joints
+              } else {
+                skeletonCtx.beginPath();
+                skeletonCtx.arc(x, y, bodyProportions.jointSize, 0, 2 * Math.PI);
+                skeletonCtx.fill();
+              }
+            } else {
+              skeletonCtx.beginPath();
+              skeletonCtx.arc(x, y, bodyProportions.jointSize, 0, 2 * Math.PI);
+              skeletonCtx.fill();
+            }
+          }
+        }
+      });
+      
+    }
+
+    function calculateBodyProportions(landmarks) {
+      if (!landmarks || landmarks.length === 0) {
+        return {
+          headSize: 12,
+          jointSize: 6,
+          lineWidth: 4
+        };
+      }
+      
+      // Calculate body height (head to feet)
+      const head = landmarks[0];
+      const leftFoot = landmarks[29];
+      const rightFoot = landmarks[30];
+      
+      if (!head || !leftFoot || !rightFoot) {
+        return {
+          headSize: 12,
+          jointSize: 6,
+          lineWidth: 4
+        };
+      }
+      
+      const footCenterX = (leftFoot.x + rightFoot.x) / 2;
+      const footCenterY = (leftFoot.y + rightFoot.y) / 2;
+      const bodyHeight = Math.sqrt(
+        Math.pow(head.x - footCenterX, 2) + 
+        Math.pow(head.y - footCenterY, 2)
+      );
+      
+      // Calculate shoulder width
+      const leftShoulder = landmarks[11];
+      const rightShoulder = landmarks[12];
+      const shoulderWidth = Math.sqrt(
+        Math.pow(rightShoulder.x - leftShoulder.x, 2) + 
+        Math.pow(rightShoulder.y - leftShoulder.y, 2)
+      );
+      
+      // Scale factors based on body proportions
+      const heightScale = bodyHeight; // Use actual body height
+      const widthScale = shoulderWidth; // Use actual shoulder width
+      
+      // Proportional sizes based on body height
+      const headSize = Math.max(8, Math.min(20, heightScale * 0.08));
+      const jointSize = Math.max(4, Math.min(10, heightScale * 0.04));
+      const lineWidth = Math.max(2, Math.min(6, heightScale * 0.025));
+      
+      return {
+        headSize,
+        jointSize,
+        lineWidth,
+        bodyHeight,
+        shoulderWidth
+      };
+    }
+
+    function drawBasicSkeleton() {
+      console.log('Drawing basic skeleton');
+      // Clear the skeleton canvas
+      skeletonCtx.clearRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+      
+      // Draw a basic stick figure
+      skeletonCtx.strokeStyle = '#00FFFF';
+      skeletonCtx.lineWidth = 4;
+      skeletonCtx.lineCap = 'round';
+      
+      const centerX = skeletonCanvas.width / 2;
+      const centerY = skeletonCanvas.height / 2;
+      
+      // Head
+      skeletonCtx.beginPath();
+      skeletonCtx.arc(centerX, centerY - 80, 20, 0, 2 * Math.PI);
+      skeletonCtx.stroke();
+      
+      // Body
+      skeletonCtx.beginPath();
+      skeletonCtx.moveTo(centerX, centerY - 60);
+      skeletonCtx.lineTo(centerX, centerY + 40);
+      skeletonCtx.stroke();
+      
+      // Arms
+      skeletonCtx.beginPath();
+      skeletonCtx.moveTo(centerX - 40, centerY - 20);
+      skeletonCtx.lineTo(centerX + 40, centerY - 20);
+      skeletonCtx.stroke();
+      
+      // Legs
+      skeletonCtx.beginPath();
+      skeletonCtx.moveTo(centerX, centerY + 40);
+      skeletonCtx.lineTo(centerX - 30, centerY + 100);
+      skeletonCtx.moveTo(centerX, centerY + 40);
+      skeletonCtx.lineTo(centerX + 30, centerY + 100);
+      skeletonCtx.stroke();
+      
+      // Add a title
+      skeletonCtx.fillStyle = '#FFFFFF';
+      skeletonCtx.font = 'bold 16px Arial';
+      skeletonCtx.textAlign = 'center';
+      skeletonCtx.fillText('Basic Skeleton (Waiting for Detection)', skeletonCanvas.width / 2, 25);
+    }
+
+    function calculateAngle(a, b, c) {
+      // a, b, c are {x, y} objects. Angle at b between ab and cb.
+      const ab = {x: a.x - b.x, y: a.y - b.y};
+      const cb = {x: c.x - b.x, y: c.y - b.y};
+      const dot = ab.x * cb.x + ab.y * cb.y;
+      const magAB = Math.sqrt(ab.x * ab.x + ab.y * ab.y);
+      const magCB = Math.sqrt(cb.x * cb.x + cb.y * cb.y);
+      let angle = Math.acos(dot / (magAB * magCB));
+      return angle * (180 / Math.PI); // in degrees
+    }
+
+    function updatePoseStats(landmarks) {
+      if (!landmarks || landmarks.length === 0) {
+        poseStats.innerHTML = "No pose detected";
+        return;
+      }
+
+      // Calculate some basic pose metrics
+      const nose = landmarks[0];
+      const leftShoulder = landmarks[11];
+      const rightShoulder = landmarks[12];
+      const leftHip = landmarks[23];
+      const rightHip = landmarks[24];
+      const leftWrist = landmarks[15];
+      const rightWrist = landmarks[16];
+
+      // Calculate shoulder width
+      const shoulderWidth = Math.sqrt(
+        Math.pow(rightShoulder.x - leftShoulder.x, 2) + 
+        Math.pow(rightShoulder.y - leftShoulder.y, 2)
+      );
+
+      // Calculate body height (nose to hip center)
+      const hipCenterX = (leftHip.x + rightHip.x) / 2;
+      const hipCenterY = (leftHip.y + rightHip.y) / 2;
+      const bodyHeight = Math.sqrt(
+        Math.pow(nose.x - hipCenterX, 2) + 
+        Math.pow(nose.y - hipCenterY, 2)
+      );
+
+      // Check for hand contact points
+      const contactPoints = checkHandContacts(landmarks);
+
+      const contactDisplay = contactPoints.length > 0 
+        ? contactPoints.map(contact => `<div class="contact-item">${contact}</div>`).join('')
+        : '<em>None detected</em>';
+        
+      poseStats.innerHTML = `
+        <strong>Pose Detected:</strong> ✅<br>
+        <strong>Hand Contacts:</strong><br>
+        ${contactDisplay}
+      `;
+
+      // Always show both hands under Hand Shape, default to N/A
+      let leftHandShape = 'N/A';
+      let rightHandShape = 'N/A';
+      if (latestHandResults && latestHandResults.multiHandLandmarks && latestHandResults.multiHandedness) {
+        for (let i = 0; i < latestHandResults.multiHandLandmarks.length; i++) {
+          const type = classifyFistOrOther(latestHandResults.multiHandLandmarks[i]);
+          const handedness = latestHandResults.multiHandedness[i].label; // 'Left' or 'Right'
+          // Mirror the label for display
+          if (handedness === 'Left') {
+            rightHandShape = type;
+          } else if (handedness === 'Right') {
+            leftHandShape = type;
+          }
+        }
+      }
+      poseStats.innerHTML += `
+        <br><strong>Hand Shape:</strong><br>
+        <div class='contact-item'>Left Hand: <strong>${leftHandShape}</strong></div>
+        <div class='contact-item'>Right Hand: <strong>${rightHandShape}</strong></div>
+      `;
+
+      // Calculate and display joint angles (crazy sensitive, high precision)
+      function safeAngle(a, b, c) {
+        if (a && b && c && a.visibility > 0.3 && b.visibility > 0.3 && c.visibility > 0.3) {
+          return calculateAngle(a, b, c).toFixed(3);
+        } else {
+          return 'N/A';
+        }
+      }
+      const leftElbowAngle = safeAngle(landmarks[11], landmarks[13], landmarks[15]); // shoulder, elbow, wrist
+      const rightElbowAngle = safeAngle(landmarks[12], landmarks[14], landmarks[16]);
+      const leftKneeAngle = safeAngle(landmarks[23], landmarks[25], landmarks[27]); // hip, knee, ankle
+      const rightKneeAngle = safeAngle(landmarks[24], landmarks[26], landmarks[28]);
+
+      poseStats.innerHTML += `
+        <br><strong>Joint Angles (deg):</strong><br>
+        <div class='contact-item'>Left Elbow: <strong>${leftElbowAngle}</strong></div>
+        <div class='contact-item'>Right Elbow: <strong>${rightElbowAngle}</strong></div>
+        <div class='contact-item'>Left Knee: <strong>${leftKneeAngle}</strong></div>
+        <div class='contact-item'>Right Knee: <strong>${rightKneeAngle}</strong></div>
+      `;
+    }
+
+    function checkHandContacts(landmarks) {
+      const contacts = [];
+      const contactThreshold = 0.05; // Very sensitive threshold for contact detection
+      
+      // Get hand positions (using middle finger tips for precision)
+      const leftHand = landmarks[17]; // left middle finger tip
+      const rightHand = landmarks[18]; // right middle finger tip
+      
+      if (!leftHand || !rightHand) return contacts;
+      
+      // Check left hand contacts
+      checkSingleHandContact(leftHand, landmarks, 'Left', contactThreshold, contacts);
+      
+      // Check right hand contacts
+      checkSingleHandContact(rightHand, landmarks, 'Right', contactThreshold, contacts);
+      
+      return contacts;
+    }
+    
+    function checkSingleHandContact(hand, landmarks, handName, threshold, contacts) {
+      // Check shoulder contacts
+      const leftShoulder = landmarks[11];
+      const rightShoulder = landmarks[12];
+      
+      if (leftShoulder && getDistance(hand, leftShoulder) < threshold) {
+        contacts.push(`${handName} hand on left shoulder`);
+      }
+      if (rightShoulder && getDistance(hand, rightShoulder) < threshold) {
+        contacts.push(`${handName} hand on right shoulder`);
+      }
+      
+      // Check hip contacts
+      const leftHip = landmarks[23];
+      const rightHip = landmarks[24];
+      
+      if (leftHip && getDistance(hand, leftHip) < threshold) {
+        contacts.push(`${handName} hand on left hip`);
+      }
+      if (rightHip && getDistance(hand, rightHip) < threshold) {
+        contacts.push(`${handName} hand on right hip`);
+      }
+      
+      // Check waist contacts (between shoulders and hips)
+      const leftElbow = landmarks[13];
+      const rightElbow = landmarks[14];
+      
+      if (leftElbow && getDistance(hand, leftElbow) < threshold) {
+        contacts.push(`${handName} hand on left waist`);
+      }
+      if (rightElbow && getDistance(hand, rightElbow) < threshold) {
+        contacts.push(`${handName} hand on right waist`);
+      }
+    }
+    
+    function getDistance(point1, point2) {
+      return Math.sqrt(
+        Math.pow(point1.x - point2.x, 2) + 
+        Math.pow(point1.y - point2.y, 2)
+      );
+    }
+
+    // Initialize everything
+    initPoseDetection();
+    
+    // Ensure skeleton canvas is visible immediately
+    skeletonCanvas.width = 480;
+    skeletonCanvas.height = 360;
+    drawBasicSkeleton();
+    
+    // Add some debugging
+    console.log('Page loaded, skeleton canvas created');
+    console.log('Skeleton canvas dimensions:', skeletonCanvas.width, 'x', skeletonCanvas.height);
+  </script>
+</body>
+</html>
