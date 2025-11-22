@@ -6769,8 +6769,19 @@
         }
         
         // Load community users when community tab is clicked
+        // Always reload to show latest profiles from all users
         if (targetTab === 'community') {
+          // Force reload all users from persistent storage
+          console.log('Loading community - refreshing all user profiles');
           loadCommunityUsers();
+          
+          // Also sync from cloud in background to get latest updates from other devices
+          syncFromCloud().then((synced) => {
+            if (synced) {
+              console.log('✓ Synced from cloud, refreshing community');
+              loadCommunityUsers();
+            }
+          });
         }
         
         // Initialize pose detection when Digital Twin tab is selected
@@ -7173,9 +7184,13 @@
         const allUsers = getAllUserProfiles();
         const registeredEmails = getRegisteredEmails();
         
+        // Get all passwords for syncing
+        const allPasswords = getStoredPasswords();
+        
         const dataToSync = {
           users: allUsers,
           registeredEmails: registeredEmails,
+          passwords: allPasswords, // Sync passwords for cross-device login
           lastSync: new Date().toISOString(),
           version: '1.0'
         };
@@ -7264,20 +7279,33 @@
             console.log('Received cloud data with', Object.keys(cloudData.users).length, 'users');
             
             // Merge cloud data with local data
-            // Cloud data takes precedence for conflicts, but we merge to keep local-only users
+            // Cloud data takes precedence for conflicts (newest data from any device)
+            // But we merge to keep local-only users (offline support)
             const localUsers = getAllUserProfiles();
             const mergedUsers = { ...cloudData.users };
             
+            // For each cloud user, prioritize cloud data (it's the most up-to-date from any device)
             // Add any local users that aren't in cloud (for offline support)
             Object.keys(localUsers).forEach(email => {
-              if (!mergedUsers[email]) {
-                mergedUsers[email] = localUsers[email];
+              const emailKey = email.toLowerCase();
+              if (!mergedUsers[emailKey]) {
+                // Local-only user (created offline), add it
+                mergedUsers[emailKey] = localUsers[email];
+              } else {
+                // User exists in both - cloud data is more up-to-date, keep it
+                // Cloud data already in mergedUsers, so we keep it
               }
             });
             
-            // Save merged data to local storage
+            // Save merged data to local storage - this is the source of truth
             localStorage.setItem('poombot_all_users', JSON.stringify(mergedUsers));
             console.log('✓ Saved merged data with', Object.keys(mergedUsers).length, 'total users');
+            
+            // Log what users we have for debugging
+            console.log('Users in merged data:', Object.keys(mergedUsers).map(email => {
+              const user = mergedUsers[email];
+              return { email: user.email, name: user.name };
+            }));
             
             // Update registered emails (merge both lists)
             if (cloudData.registeredEmails && Array.isArray(cloudData.registeredEmails)) {
@@ -7286,20 +7314,50 @@
               localStorage.setItem('poombot_registered_emails', JSON.stringify(mergedEmails));
             }
             
+            // Sync passwords from cloud (merge, cloud takes precedence for latest data)
+            if (cloudData.passwords && typeof cloudData.passwords === 'object') {
+              const localPasswords = getStoredPasswords();
+              // Cloud passwords take precedence (they have the latest from any device)
+              const mergedPasswords = { ...localPasswords, ...cloudData.passwords };
+              localStorage.setItem('poombot_user_passwords', JSON.stringify(mergedPasswords));
+              console.log('✓ Synced passwords from cloud');
+            }
+            
             console.log('✓ Data synced from cloud successfully');
             localStorage.setItem('poombot_last_cloud_sync', new Date().toISOString());
             
-            // Refresh community view if it's currently displayed
-            if (document.getElementById('community') && document.getElementById('community').classList.contains('active')) {
-              loadCommunityUsers();
-            }
+            // Always refresh community view to show all users from cloud
+            // This ensures all devices see the same community
+            setTimeout(() => {
+              if (document.getElementById('community')) {
+                loadCommunityUsers();
+                console.log('✓ Community view refreshed with cloud data');
+              }
+            }, 100);
             
-            // Also refresh profile if user is logged in
+            // Also refresh profile if user is logged in with cloud data (most up-to-date)
             const currentEmail = localStorage.getItem('poombot_current_email');
             if (currentEmail && mergedUsers[currentEmail.toLowerCase()]) {
               const updatedUser = mergedUsers[currentEmail.toLowerCase()];
+              // Update session with cloud data (most recent from any device)
               setUserSession(updatedUser);
-              loadUserProfile();
+              // Also update persistent storage to keep it in sync (but don't sync back to cloud immediately)
+              const allUsersForSession = getAllUserProfiles();
+              allUsersForSession[currentEmail.toLowerCase()] = updatedUser;
+              localStorage.setItem('poombot_all_users', JSON.stringify(allUsersForSession));
+              localStorage.setItem('poombot_user', JSON.stringify(updatedUser));
+              
+              // Always refresh the displayed profile with cloud data
+              const profileContent = document.getElementById('profile');
+              if (profileContent) {
+                // Update the display view immediately with cloud data
+                loadUserProfile();
+                // Use setTimeout to ensure DOM is ready
+                setTimeout(() => {
+                  updateProfileDisplayView(updatedUser);
+                }, 50);
+              }
+              console.log('✓ Profile refreshed with cloud data for:', currentEmail);
             }
             
             return true;
@@ -8046,6 +8104,50 @@
       return emails.includes(email.toLowerCase());
     }
     
+    // Password Management Functions
+    function saveUserPassword(email, password) {
+      if (!email || !password) {
+        console.error('Cannot save password: email or password is missing');
+        return;
+      }
+      const passwords = getStoredPasswords();
+      const emailKey = email.toLowerCase();
+      passwords[emailKey] = password; // Save password exactly as provided (no trimming)
+      localStorage.setItem('poombot_user_passwords', JSON.stringify(passwords));
+      console.log('Password saved for:', emailKey);
+      console.log('Password length:', password.length);
+    }
+    
+    function getUserPassword(email) {
+      if (!email) {
+        console.error('Cannot get password: email is missing');
+        return null;
+      }
+      const passwords = getStoredPasswords();
+      const emailKey = email.toLowerCase();
+      const password = passwords[emailKey] || null;
+      if (password) {
+        console.log('Password retrieved for:', emailKey, 'Length:', password.length);
+      } else {
+        console.log('No password found for:', emailKey);
+      }
+      return password;
+    }
+    
+    function getStoredPasswords() {
+      try {
+        const stored = localStorage.getItem('poombot_user_passwords');
+        return stored ? JSON.parse(stored) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+    
+    function verifyPassword(email, password) {
+      const storedPassword = getUserPassword(email);
+      return storedPassword === password;
+    }
+    
     // User Count Tracking (only increments, never decreases)
     function incrementUserCount() {
       // Member count = total historical sign-ups (never decreases)
@@ -8116,15 +8218,103 @@
         existingUser = getUserProfileByEmail(email);
       }
       
-      // 3. Allow login for any valid email address
-      // Since localStorage is device-specific, we allow login based on email alone
-      // If profile exists, restore it; if not, create a new one
+      // 3. Only allow login for registered users
+      // Users must sign up first before they can login
       const emailRegistered = isEmailRegistered(email);
-      const isValidEmail = email && email.includes('@') && email.includes('.');
       
-      if (existingUser || emailRegistered || isValidEmail) {
-        // Ensure email is registered for future reference
-        addRegisteredEmail(email);
+      // Check if user exists or email is registered
+      if (!existingUser && !emailRegistered) {
+        // User has not signed up - show error message
+        alert('This email address has not been registered. Please sign up for an account first.');
+        // Switch to signup tab
+        switchAuthMode('signup');
+        // Pre-fill email in signup form if provided
+        const signupEmailField = document.getElementById('signup-email');
+        if (signupEmailField && email) {
+          signupEmailField.value = email;
+        }
+        return;
+      }
+      
+      // PASSWORD VERIFICATION - Direct and simple
+      const emailLower = email.toLowerCase();
+      
+      // Get password directly from storage (try multiple methods)
+      const allPasswords = getStoredPasswords();
+      let storedPassword = allPasswords[emailLower];
+      
+      // If not found, try function
+      if (!storedPassword) {
+        storedPassword = getUserPassword(emailLower);
+      }
+      
+      console.log('=== PASSWORD VERIFICATION ===');
+      console.log('Email:', emailLower);
+      console.log('Entered password:', password, 'Type:', typeof password, 'Length:', password ? password.length : 0);
+      console.log('Stored password:', storedPassword, 'Type:', typeof storedPassword, 'Length:', storedPassword ? storedPassword.length : 0);
+      console.log('Stored password exists:', !!storedPassword);
+      console.log('All password keys:', Object.keys(allPasswords));
+      
+      // If password is stored, verify it matches
+      if (storedPassword) {
+        // Direct string comparison
+        const exactMatch = String(password) === String(storedPassword);
+        const trimmedMatch = String(password).trim() === String(storedPassword).trim();
+        
+        console.log('Password comparison:');
+        console.log('  Entered (as string):', JSON.stringify(String(password)));
+        console.log('  Stored (as string):', JSON.stringify(String(storedPassword)));
+        console.log('  Exact match:', exactMatch);
+        console.log('  Trimmed match:', trimmedMatch);
+        
+        // If passwords match (exact or trimmed), allow login
+        if (exactMatch || trimmedMatch) {
+          console.log('✓✓✓ PASSWORD MATCHES - LOGIN ALLOWED ✓✓✓');
+          // Password verified - continue with login (don't return)
+        } else {
+          // Passwords don't match - block login
+          console.error('❌❌❌ PASSWORD MISMATCH - BLOCKING LOGIN ❌❌❌');
+          console.error('Entered password:', JSON.stringify(password), 'Length:', password.length);
+          console.error('Stored password:', JSON.stringify(storedPassword), 'Length:', storedPassword.length);
+          console.error('Exact match failed:', exactMatch);
+          console.error('Trimmed match failed:', trimmedMatch);
+          alert('Incorrect password. Please check your password and try again.');
+          document.getElementById('login-password').value = '';
+          return;
+        }
+      } else {
+        // NO PASSWORD STORED
+        // This might be an old account or password wasn't saved correctly
+        console.log('⚠️ No password stored for this account');
+        
+        // If email is registered but no password, save the entered password now
+        if (emailRegistered && password) {
+          console.log('Saving password for registered email that was missing password');
+          saveUserPassword(emailLower, password);
+          console.log('✓ Password saved - allowing login');
+          // Allow login and continue
+        } else if (existingUser && password) {
+          // Existing user profile but no password stored
+          // Save the password they entered and allow login
+          console.log('Saving password for existing user that was missing password');
+          saveUserPassword(emailLower, password);
+          console.log('✓ Password saved - allowing login');
+          // Allow login and continue
+        } else if (!password || password.trim() === '') {
+          // No password entered
+          alert('Password is required. Please enter your password.');
+          document.getElementById('login-password').focus();
+          return;
+        } else {
+          // Password entered but account not found - shouldn't reach here
+          alert('Account not found. Please sign up first.');
+          document.getElementById('login-password').value = '';
+          return;
+        }
+      }
+      
+      // PASSWORD CHECK PASSED - PROCEED WITH LOGIN
+      console.log('✓ Password check passed - LOGIN PROCEEDING');
         
         // Use existing user if found - ALWAYS prioritize persistent storage
         if (existingUser) {
@@ -8201,47 +8391,6 @@
           };
           setUserSession(basicUser);
           }
-        } else {
-          // Valid email but not registered and no existing profile - create basic profile
-          // This allows users to login on different devices
-          const allUsers = getAllUserProfiles();
-          const emailKey = email.toLowerCase();
-          existingUser = allUsers[emailKey];
-          
-          if (existingUser) {
-            setUserSession(existingUser);
-          } else {
-            // Create minimal profile for new login
-            const basicUser = {
-              email: email.toLowerCase(),
-              name: email.split('@')[0], // Fallback name
-              age: '',
-              birthYear: '',
-              ageCategory: '',
-              role: [],
-              level: '',
-              gender: '',
-              country: '',
-              team: '',
-              achievements: '',
-              bio: '',
-              beltRank: '',
-              yearsTraining: '',
-              instructor: '',
-              dojang: '',
-              trainingGoals: '',
-              specialization: '',
-              instagram: '',
-              tiktok: '',
-              facebook: '',
-              website: '',
-              youtube: '',
-              contactEmail: '',
-              profileImage: null,
-            };
-            setUserSession(basicUser);
-            saveUserDataToStorage(basicUser);
-          }
         }
         
         hideAuthModal();
@@ -8303,13 +8452,27 @@
           emptyState.style.display = 'none';
         }
         
-        // Sync from cloud after login to get latest community data
+        // CRITICAL: Sync from cloud FIRST before loading profile to get latest data
+        // This ensures we have the most up-to-date profile from any device
         syncFromCloud().then((synced) => {
           if (synced) {
-            console.log('✓ Synced from cloud after login');
+            console.log('✓ Synced from cloud after login - got latest data');
+            
+            // After syncing, get the updated profile from storage (might have been updated by sync)
+            const emailKey = email.toLowerCase();
+            const allUsersAfterSync = getAllUserProfiles();
+            const syncedProfile = allUsersAfterSync[emailKey];
+            
+            if (syncedProfile) {
+              // Use the synced profile (most recent from any device)
+              setUserSession(syncedProfile);
+              saveUserDataToStorage(syncedProfile);
+              console.log('✓ Updated session with synced profile');
+            }
           } else {
             console.log('⚠ No cloud data available yet (will sync on first save)');
           }
+          
           // Load profile IMMEDIATELY - this will populate the display view with saved data
           // loadUserProfile will call switchToDisplayMode() and updateProfileDisplayView()
           // which is exactly what happens when clicking "Save Profile"
@@ -8321,76 +8484,14 @@
           setTimeout(() => {
             updateProfileTabAvatar();
           }, 100);
+          
+          // Also refresh community view to show all users
+          setTimeout(() => {
+            if (document.getElementById('community')) {
+              loadCommunityUsers();
+            }
+          }, 200);
         });
-      } else {
-        // If user doesn't exist but email is valid, create a basic profile
-        // This allows users to login on different devices
-        const basicUser = {
-          email: email.toLowerCase(),
-          name: email.split('@')[0], // Fallback name
-          age: '',
-          birthYear: '',
-          ageCategory: '',
-          role: [],
-          level: '',
-          gender: '',
-          country: '',
-          team: '',
-          achievements: '',
-          bio: '',
-          beltRank: '',
-          yearsTraining: '',
-          instructor: '',
-          dojang: '',
-          trainingGoals: '',
-          specialization: '',
-          instagram: '',
-          tiktok: '',
-          facebook: '',
-          website: '',
-          youtube: '',
-          contactEmail: '',
-          profileImage: null,
-        };
-        
-        // Save the basic profile
-        setUserSession(basicUser);
-        saveUserDataToStorage(basicUser);
-        
-        // Hide auth modal
-        hideAuthModal();
-        
-        // Switch to profile tab
-        const profileTabBtn = document.querySelector('.profile-tab') || document.querySelector('[data-tab="profile"]');
-        if (profileTabBtn) {
-          document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-          document.querySelectorAll('.content-area').forEach(a => a.classList.remove('active'));
-          profileTabBtn.classList.add('active');
-          const profileContent = document.getElementById('profile');
-          if (profileContent) {
-            profileContent.classList.add('active');
-          }
-        }
-        
-        // Force display view
-        const displayView = document.getElementById('profile-display-view');
-        const editView = document.getElementById('profile-edit-view');
-        const contentState = document.getElementById('profile-content-state');
-        const emptyState = document.getElementById('profile-empty-state');
-        
-        if (displayView) displayView.style.display = 'block';
-        if (editView) editView.style.display = 'none';
-        if (contentState) contentState.style.display = 'flex';
-        if (emptyState) emptyState.style.display = 'none';
-        
-        // Load profile
-        loadUserProfile();
-        
-        setTimeout(() => {
-          updateProfileTabAvatar();
-        }, 100);
-        return;
-      }
     });
     
     document.getElementById('signup-form').addEventListener('submit', function(e) {
@@ -8406,8 +8507,12 @@
         return;
       }
       
-      // Check if email is already registered
-      if (isEmailRegistered(email)) {
+      // Check if email is already registered or has an existing profile
+      // One email can only sign up for one account
+      const emailRegistered = isEmailRegistered(email);
+      const existingProfile = getUserProfileByEmail(email);
+      
+      if (emailRegistered || existingProfile) {
         alert('An account with this email already exists. Please log in instead.');
         // Switch to login tab
         switchAuthMode('login');
@@ -8422,14 +8527,66 @@
       // Register this email first
       addRegisteredEmail(email);
       
+      // CRITICAL: Save the password for this user
+      // Save BEFORE creating user profile to ensure it's available
+      const emailNormalized = email.toLowerCase();
+      
+      // Save password multiple times to ensure it's stored
+      saveUserPassword(emailNormalized, password);
+      saveUserPassword(emailNormalized, password); // Save twice to be sure
+      
+      // CRITICAL: Verify password was saved correctly IMMEDIATELY
+      // Check directly from localStorage
+      const allPasswordsCheck = getStoredPasswords();
+      const savedPassword = allPasswordsCheck[emailNormalized] || getUserPassword(emailNormalized);
+      
+      console.log('=== PASSWORD SAVE VERIFICATION ===');
+      console.log('Email:', email);
+      console.log('Email normalized:', emailNormalized);
+      console.log('Original password:', password, 'Length:', password.length);
+      console.log('Saved password:', savedPassword, 'Length:', savedPassword ? savedPassword.length : 0);
+      console.log('Passwords match:', savedPassword === password);
+      console.log('All passwords in storage:', Object.keys(allPasswordsCheck));
+      console.log('Password in storage for this email:', allPasswordsCheck[emailNormalized]);
+      
+      // Verify password was saved
+      if (!savedPassword) {
+        console.error('❌ Password NOT SAVED! Trying again...');
+        // Force save directly to localStorage
+        const passwords = getStoredPasswords();
+        passwords[emailNormalized] = password;
+        localStorage.setItem('poombot_user_passwords', JSON.stringify(passwords));
+        
+        // Verify again
+        const verifyAgain = getStoredPasswords()[emailNormalized];
+        if (!verifyAgain || verifyAgain !== password) {
+          alert('CRITICAL: Password could not be saved. Please refresh and try again.');
+          console.error('Password save FAILED even after direct localStorage write');
+          return;
+        } else {
+          console.log('✓ Password saved successfully after direct write');
+        }
+      } else if (savedPassword !== password) {
+        console.error('❌ Password saved but does not match!');
+        console.error('Original:', JSON.stringify(password));
+        console.error('Saved:', JSON.stringify(savedPassword));
+        // Force save the correct password
+        const passwords = getStoredPasswords();
+        passwords[emailNormalized] = password;
+        localStorage.setItem('poombot_user_passwords', JSON.stringify(passwords));
+        console.log('✓ Corrected password in storage');
+      } else {
+        console.log('✓ Password saved successfully for:', email);
+      }
+      
       // Increment user count only for new signups (already checked for duplicates above)
       incrementUserCount();
       updateUserCountDisplay();
       
       // Create new user session with all fields
-      setUserSession({
+      const newUser = {
         name: name, // Use the name from signup form
-        email: email,
+        email: email.toLowerCase(), // Normalize email
         age: '',
         birthYear: '',
         ageCategory: '',
@@ -8453,7 +8610,24 @@
         youtube: '',
         contactEmail: '',
         profileImage: null,
-          });
+      };
+      
+      // Save to session
+      setUserSession(newUser);
+      
+      // CRITICAL: Save to persistent storage immediately so it syncs to cloud
+      saveUserDataToStorage(newUser);
+      
+      // Sync to cloud immediately after signup to save user data and password
+      syncToCloud().then(success => {
+        if (success) {
+          console.log('✓ Cloud sync completed after signup');
+        } else {
+          console.warn('⚠ Cloud sync failed after signup (will retry on next sync)');
+        }
+      }).catch(err => {
+        console.error('Cloud sync error after signup:', err);
+      });
       
       hideAuthModal();
       
@@ -9872,8 +10046,21 @@
         // CRITICAL: Save to persistent storage DIRECTLY - don't rely on setUserSession
         const allUsersSave = getAllUserProfiles();
         allUsersSave[profileData.email.toLowerCase()] = profileData;
+        
+        console.log('=== SAVING PROFILE TO PERSISTENT STORAGE ===');
+        console.log('Email:', profileData.email);
+        console.log('Total users before save:', Object.keys(allUsersSave).length);
+        
         try {
           localStorage.setItem('poombot_all_users', JSON.stringify(allUsersSave));
+          
+          // Verify it was saved
+          const verifySave = getAllUserProfiles();
+          console.log('✓ Verification - Total users after save:', Object.keys(verifySave).length);
+          console.log('✓ Verification - Saved profile exists:', !!verifySave[profileData.email.toLowerCase()]);
+          if (verifySave[profileData.email.toLowerCase()]) {
+            console.log('✓ Verification - Saved profile name:', verifySave[profileData.email.toLowerCase()].name);
+          }
           
           // Sync to cloud in background
           syncToCloud().then(success => {
@@ -9885,6 +10072,15 @@
           }).catch(err => {
             console.error('Cloud sync error:', err);
           });
+          
+          // CRITICAL: Refresh community view to show updated profile
+          // This ensures other users see the latest profile updates
+          setTimeout(() => {
+            if (document.getElementById('community')) {
+              loadCommunityUsers();
+              console.log('✓ Community view refreshed after profile save');
+            }
+          }, 100);
         } catch(e) {
           const singleUser = {};
           singleUser[profileData.email.toLowerCase()] = profileData;
