@@ -1827,6 +1827,20 @@
       transform: translateY(-2px);
     }
     
+    .community-you-badge {
+      display: inline-block;
+      margin-top: 0.75rem;
+      background: rgba(96, 165, 250, 0.2);
+      border: 1.5px solid rgba(96, 165, 250, 0.5);
+      border-radius: 16px;
+      padding: 0.3rem 0.85rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #60a5fa;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    
     .community-empty-state {
       padding: 4rem 2rem;
       text-align: center;
@@ -3686,7 +3700,6 @@
       <div id="introduction" class="content-area active">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1.5rem;">
@@ -3720,7 +3733,6 @@
       <div id="mission" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <h2>Purpose and Values</h2>
@@ -3874,7 +3886,6 @@
       <div id="team" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <h2>Team and Contributors</h2>
@@ -4009,7 +4020,6 @@
       <div id="book-session" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <h2>Book a Session!</h2>
@@ -4242,7 +4252,6 @@
       <div id="community" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <div style="text-align: center; margin-bottom: 3rem;">
@@ -4312,7 +4321,6 @@
       <div id="connections" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <div style="text-align: center; margin-bottom: 4rem;">
@@ -4854,7 +4862,6 @@
       <div id="channel" class="content-area">
         <div class="tagline-section">
           <div class="tagline">"Train Smarter. Master Faster."</div>
-          <div class="subtitle">Powered by PoomBot</div>
         </div>
         <div class="content-section">
           <h2>PoomBot Channel</h2>
@@ -6933,14 +6940,14 @@
           titleElement.innerHTML = 'PoomBot';
           
           // Start typing tagline
-          typeText(taglineElement, '"Train Smarter. Master Faster."', 80, () => {
+          typeText(taglineElement, 'Built for Community. Powered by Technology.', 80, () => {
             // Add cursor to tagline
             taglineElement.innerHTML += '<span class="typing-cursor tagline-cursor"></span>';
             
             // Show button after tagline is complete
             setTimeout(() => {
               // Remove cursor from tagline
-              taglineElement.innerHTML = '"Train Smarter. Master Faster."';
+              taglineElement.innerHTML = 'Built for Community. Powered by Technology.';
               showButton();
             }, 1000);
           });
@@ -7083,60 +7090,35 @@
       localStorage.setItem('poombot_logged_in', 'true');
       localStorage.setItem('poombot_current_email', userData.email.toLowerCase());
       
-      // Store/update user profile by email for persistence
-      const allUsers = getAllUserProfiles();
-      allUsers[userData.email.toLowerCase()] = userData;
+      // Upsert into the shared community store without dropping other users
+      userData.lastUpdated = new Date().toISOString();
+      upsertUserProfile(userData);
+      if (userData.email) {
+        addRegisteredEmail(userData.email);
+      }
+      ensureRegisteredUsersHaveProfiles();
       
       console.log('Saving to poombot_all_users, email key:', userData.email.toLowerCase());
       console.log('Profile image in data being saved:', userData.profileImage ? 'EXISTS (' + userData.profileImage.length + ' chars)' : 'MISSING');
       
-      try {
-        localStorage.setItem('poombot_all_users', JSON.stringify(allUsers));
-        console.log('✓ Successfully saved to persistent storage');
-        
-        // Sync to cloud in background (don't wait for it)
-        syncToCloud().then(success => {
-          if (success) {
-            console.log('✓ Cloud sync completed after save');
-          } else {
-            console.warn('⚠ Cloud sync failed after save');
-          }
-        }).catch(err => {
-          console.error('Cloud sync error:', err);
-        });
-        
-        // Verify it was saved
-        const verify = localStorage.getItem('poombot_all_users');
-        const verifyParsed = verify ? JSON.parse(verify) : {};
-        const savedUser = verifyParsed[userData.email.toLowerCase()];
-        console.log('✓ Verification - saved user:', {
-          email: savedUser?.email,
-          name: savedUser?.name,
-          hasProfileImage: !!savedUser?.profileImage,
-          profileImageLength: savedUser?.profileImage ? savedUser.profileImage.length : 0
-        });
-      } catch (e) {
-        console.error('ERROR saving to storage:', e);
-        // If quota exceeded, try to clear old user data (keep only current user)
-        console.warn('Storage quota exceeded, clearing other users\' data');
-        const currentUserOnly = {};
-        currentUserOnly[userData.email.toLowerCase()] = userData;
-        try {
-          localStorage.setItem('poombot_all_users', JSON.stringify(currentUserOnly));
-          console.log('✓ Saved as only user (cleared others)');
-        } catch (e2) {
-          console.error('ERROR even after clearing others:', e2);
-          // Last resort: save without images
-          const userWithoutImages = {
-            ...userData,
-            profileImage: null
-          };
-          const minimalUsers = {};
-          minimalUsers[userData.email.toLowerCase()] = userWithoutImages;
-          localStorage.setItem('poombot_all_users', JSON.stringify(minimalUsers));
-          console.warn('⚠ Saved without images due to quota');
+      const savedUser = getAllUserProfiles()[userData.email.toLowerCase()];
+      console.log('✓ Verification - saved user:', {
+        email: savedUser?.email,
+        name: savedUser?.name,
+        hasProfileImage: !!savedUser?.profileImage,
+        profileImageLength: savedUser?.profileImage ? savedUser.profileImage.length : 0,
+        totalUsers: Object.keys(getAllUserProfiles()).length
+      });
+      
+      syncToCloud().then(success => {
+        if (success) {
+          console.log('✓ Cloud sync completed after save');
+        } else {
+          console.warn('⚠ Cloud sync failed after save');
         }
-      }
+      }).catch(err => {
+        console.error('Cloud sync error:', err);
+      });
     }
     
     function getUserSession() {
@@ -7145,8 +7127,136 @@
     }
     
     function getAllUserProfiles() {
-      const allUsers = localStorage.getItem('poombot_all_users');
-      return allUsers ? JSON.parse(allUsers) : {};
+      try {
+        const allUsers = localStorage.getItem('poombot_all_users');
+        return allUsers ? JSON.parse(allUsers) : {};
+      } catch (e) {
+        console.warn('Could not parse poombot_all_users', e);
+        return {};
+      }
+    }
+    
+    function createEmptyUserProfile(email, name) {
+      const emailKey = (email || '').toLowerCase();
+      return {
+        name: name || (emailKey ? emailKey.split('@')[0] : 'User'),
+        email: emailKey,
+        age: '',
+        birthYear: '',
+        ageCategory: '',
+        role: [],
+        level: '',
+        gender: '',
+        country: '',
+        team: '',
+        achievements: '',
+        bio: '',
+        beltRank: '',
+        yearsTraining: '',
+        instructor: '',
+        dojang: '',
+        trainingGoals: '',
+        specialization: '',
+        instagram: '',
+        tiktok: '',
+        facebook: '',
+        website: '',
+        youtube: '',
+        contactEmail: '',
+        profileImage: null,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+    
+    function persistAllUserProfiles(allUsers) {
+      try {
+        localStorage.setItem('poombot_all_users', JSON.stringify(allUsers));
+        return true;
+      } catch (e) {
+        console.warn('Storage quota exceeded — stripping images, keeping every profile');
+        const copy = {};
+        Object.keys(allUsers || {}).forEach(email => {
+          copy[email] = { ...(allUsers[email] || {}) };
+        });
+        const emailsBySize = Object.keys(copy).sort((a, b) => {
+          const sizeOf = (user) => {
+            const img = user && user.profileImage ? String(user.profileImage).length : 0;
+            const gallery = user && user.gallery ? JSON.stringify(user.gallery).length : 0;
+            return img + gallery;
+          };
+          return sizeOf(copy[b]) - sizeOf(copy[a]);
+        });
+        for (let i = 0; i < emailsBySize.length; i++) {
+          const email = emailsBySize[i];
+          if (copy[email].profileImage) copy[email].profileImage = null;
+          if (copy[email].gallery) copy[email].gallery = [];
+          try {
+            localStorage.setItem('poombot_all_users', JSON.stringify(copy));
+            console.warn('✓ Saved all community profiles after stripping images');
+            return true;
+          } catch (inner) {
+            // keep stripping
+          }
+        }
+        console.error('ERROR persisting community profiles even after stripping images', e);
+        return false;
+      }
+    }
+    
+    function mergeUserRecords(a, b) {
+      if (!a) return b;
+      if (!b) return a;
+      const aTime = Date.parse(a.lastUpdated || 0) || 0;
+      const bTime = Date.parse(b.lastUpdated || 0) || 0;
+      const newer = aTime >= bTime ? a : b;
+      const older = newer === a ? b : a;
+      const merged = { ...older, ...newer };
+      Object.keys(older).forEach(key => {
+        const nextVal = merged[key];
+        const oldVal = older[key];
+        const nextEmpty = nextVal === '' || nextVal == null || (Array.isArray(nextVal) && nextVal.length === 0);
+        if (nextEmpty && oldVal) {
+          merged[key] = oldVal;
+        }
+        if (key === 'profileImage' && (!nextVal || String(nextVal).length < 20) && oldVal && String(oldVal).length > 20) {
+          merged[key] = oldVal;
+        }
+      });
+      return merged;
+    }
+    
+    function upsertUserProfile(userData) {
+      if (!userData || !userData.email) return getAllUserProfiles();
+      const emailKey = userData.email.toLowerCase();
+      const allUsers = getAllUserProfiles();
+      allUsers[emailKey] = mergeUserRecords(allUsers[emailKey], { ...userData, email: emailKey });
+      persistAllUserProfiles(allUsers);
+      return allUsers;
+    }
+    
+    function ensureRegisteredUsersHaveProfiles() {
+      const allUsers = getAllUserProfiles();
+      const registeredEmails = getRegisteredEmails();
+      let changed = false;
+      registeredEmails.forEach(email => {
+        const emailKey = (email || '').toLowerCase();
+        if (!emailKey) return;
+        if (!allUsers[emailKey] || !allUsers[emailKey].email) {
+          allUsers[emailKey] = createEmptyUserProfile(emailKey);
+          changed = true;
+        }
+      });
+      Object.keys(allUsers).forEach(email => {
+        const emailKey = email.toLowerCase();
+        if (allUsers[email] && !allUsers[email].email) {
+          allUsers[email].email = emailKey;
+          changed = true;
+        }
+      });
+      if (changed) {
+        persistAllUserProfiles(allUsers);
+      }
+      return allUsers;
     }
     
     // Cloud Storage Sync Functions
@@ -7179,8 +7289,55 @@
       return cloudBinId;
     }
     
+    function isCloudConfigured() {
+      return CLOUD_ACCESS_KEY && CLOUD_ACCESS_KEY !== '$2a$10$XKqZ8vJ9LmNpQrStUvWxYe';
+    }
+    
+    async function mergeCloudUsersIntoLocal() {
+      const binId = getCloudBinId();
+      if (!binId || !isCloudConfigured()) return false;
+      try {
+        const response = await fetch(`${CLOUD_STORAGE_URL}/${binId}/latest`, {
+          method: 'GET',
+          headers: {
+            'X-Master-Key': CLOUD_ACCESS_KEY
+          }
+        });
+        if (!response.ok) return false;
+        const result = await response.json();
+        const cloudData = result.record;
+        if (!cloudData || !cloudData.users) return false;
+        
+        const localUsers = getAllUserProfiles();
+        const mergedUsers = { ...localUsers };
+        Object.keys(cloudData.users).forEach(email => {
+          const emailKey = email.toLowerCase();
+          mergedUsers[emailKey] = mergeUserRecords(mergedUsers[emailKey], cloudData.users[email]);
+        });
+        persistAllUserProfiles(mergedUsers);
+        
+        if (cloudData.registeredEmails && Array.isArray(cloudData.registeredEmails)) {
+          const mergedEmails = [...new Set([...getRegisteredEmails(), ...cloudData.registeredEmails.map(e => String(e).toLowerCase())])];
+          localStorage.setItem('poombot_registered_emails', JSON.stringify(mergedEmails));
+        }
+        if (cloudData.passwords && typeof cloudData.passwords === 'object') {
+          const mergedPasswords = { ...getStoredPasswords(), ...cloudData.passwords };
+          localStorage.setItem('poombot_user_passwords', JSON.stringify(mergedPasswords));
+        }
+        ensureRegisteredUsersHaveProfiles();
+        return true;
+      } catch (e) {
+        console.warn('Could not merge from cloud before write', e);
+        return false;
+      }
+    }
+    
     async function syncToCloud() {
       try {
+        // Always merge remote community into local first so a new signup cannot wipe others
+        await mergeCloudUsersIntoLocal();
+        ensureRegisteredUsersHaveProfiles();
+        
         const allUsers = getAllUserProfiles();
         const registeredEmails = getRegisteredEmails();
         
@@ -7194,6 +7351,10 @@
           lastSync: new Date().toISOString(),
           version: '1.0'
         };
+        
+        if (!isCloudConfigured()) {
+          return false;
+        }
         
         let binId = getCloudBinId();
         console.log('Syncing to cloud, bin ID:', binId || 'will create new');
@@ -7278,27 +7439,20 @@
           if (cloudData && cloudData.users) {
             console.log('Received cloud data with', Object.keys(cloudData.users).length, 'users');
             
-            // Merge cloud data with local data
-            // Cloud data takes precedence for conflicts (newest data from any device)
-            // But we merge to keep local-only users (offline support)
             const localUsers = getAllUserProfiles();
-            const mergedUsers = { ...cloudData.users };
-            
-            // For each cloud user, prioritize cloud data (it's the most up-to-date from any device)
-            // Add any local users that aren't in cloud (for offline support)
+            const mergedUsers = { ...localUsers };
+            Object.keys(cloudData.users).forEach(email => {
+              const emailKey = email.toLowerCase();
+              mergedUsers[emailKey] = mergeUserRecords(mergedUsers[emailKey], cloudData.users[email]);
+            });
             Object.keys(localUsers).forEach(email => {
               const emailKey = email.toLowerCase();
               if (!mergedUsers[emailKey]) {
-                // Local-only user (created offline), add it
                 mergedUsers[emailKey] = localUsers[email];
-              } else {
-                // User exists in both - cloud data is more up-to-date, keep it
-                // Cloud data already in mergedUsers, so we keep it
               }
             });
             
-            // Save merged data to local storage - this is the source of truth
-            localStorage.setItem('poombot_all_users', JSON.stringify(mergedUsers));
+            persistAllUserProfiles(mergedUsers);
             console.log('✓ Saved merged data with', Object.keys(mergedUsers).length, 'total users');
             
             // Log what users we have for debugging
@@ -7339,12 +7493,8 @@
             const currentEmail = localStorage.getItem('poombot_current_email');
             if (currentEmail && mergedUsers[currentEmail.toLowerCase()]) {
               const updatedUser = mergedUsers[currentEmail.toLowerCase()];
-              // Update session with cloud data (most recent from any device)
               setUserSession(updatedUser);
-              // Also update persistent storage to keep it in sync (but don't sync back to cloud immediately)
-              const allUsersForSession = getAllUserProfiles();
-              allUsersForSession[currentEmail.toLowerCase()] = updatedUser;
-              localStorage.setItem('poombot_all_users', JSON.stringify(allUsersForSession));
+              upsertUserProfile(updatedUser);
               localStorage.setItem('poombot_user', JSON.stringify(updatedUser));
               
               // Always refresh the displayed profile with cloud data
@@ -7386,16 +7536,16 @@
       
       console.log('=== PoomBot Cloud Sync Initialization ===');
       console.log('Initializing cloud sync...');
+      ensureRegisteredUsersHaveProfiles();
+      loadCommunityUsers();
+      window.addEventListener('storage', function(e) {
+        if (e.key === 'poombot_all_users' || e.key === 'poombot_registered_emails') {
+          loadCommunityUsers();
+        }
+      });
       
-      // Check if API key is set (not the default placeholder)
-      if (CLOUD_ACCESS_KEY === '$2a$10$XKqZ8vJ9LmNpQrStUvWxYe') {
-        console.warn('⚠️ WARNING: Using default API key. Cloud sync will NOT work!');
-        console.warn('⚠️ To enable cloud sync:');
-        console.warn('   1. Go to https://jsonbin.io and create a free account');
-        console.warn('   2. Create a new bin');
-        console.warn('   3. Get your API key from the dashboard');
-        console.warn('   4. Update CLOUD_ACCESS_KEY in the code with your actual API key');
-        console.warn('   Without a valid API key, data will only be stored locally on each device.');
+      if (!isCloudConfigured()) {
+        console.warn('Cloud sync is not configured. Community uses the shared local profile store on this browser.');
         return;
       }
       
@@ -7437,28 +7587,9 @@
       
       if (!grid) return;
       
-      // Get all users from persistent storage
-      const allUsers = getAllUserProfiles();
-      const currentEmail = localStorage.getItem('poombot_current_email');
-      
-      // Filter out current user and get all other users
-      // Also exclude "Sylvia" profile - this user is banned and should never appear
-      allCommunityUsers = Object.values(allUsers).filter(user => {
-        if (!user || !user.email) return false;
-        
-        // Exclude current user
-        if (user.email.toLowerCase() === (currentEmail || '').toLowerCase()) {
-          return false;
-        }
-        
-        // Exclude profile with exact name "Sylvia" (case-insensitive)
-        const userName = (user.name || '').trim();
-        if (userName.toLowerCase() === 'sylvia') {
-          return false;
-        }
-        
-        return true;
-      });
+      // Show every registered account, including the current user
+      const allUsers = ensureRegisteredUsersHaveProfiles();
+      allCommunityUsers = Object.values(allUsers).filter(user => user && user.email);
       
       // Populate country filter
       populateCountryFilter();
@@ -7580,6 +7711,9 @@
       
       // Get roles
       const roles = Array.isArray(user.role) ? user.role : (user.role ? [user.role] : []);
+      const currentEmail = (localStorage.getItem('poombot_current_email') || '').toLowerCase();
+      const isCurrentUser = user.email && user.email.toLowerCase() === currentEmail;
+      const youBadge = isCurrentUser ? '<div class="community-you-badge">You</div>' : '';
       const rolesHTML = roles.length > 0 
         ? `<div class="community-user-roles">${roles.map(r => `<span class="community-user-role-badge">${escapeHtml(r.charAt(0).toUpperCase() + r.slice(1))}</span>`).join('')}</div>`
         : '';
@@ -7598,6 +7732,7 @@
         ${ageText ? `<div class="community-user-info"><i class="fas fa-birthday-cake"></i> ${ageText}</div>` : ''}
         ${genderText ? `<div class="community-user-info"><i class="fas fa-user"></i> ${genderText}</div>` : ''}
         ${rolesHTML}
+        ${youBadge}
       `;
       
       return card;
@@ -8093,9 +8228,16 @@
     
     function addRegisteredEmail(email) {
       const emails = getRegisteredEmails();
-      if (!emails.includes(email.toLowerCase())) {
-        emails.push(email.toLowerCase());
+      const emailKey = (email || '').toLowerCase();
+      if (!emailKey) return;
+      if (!emails.includes(emailKey)) {
+        emails.push(emailKey);
         localStorage.setItem('poombot_registered_emails', JSON.stringify(emails));
+      }
+      const allUsers = getAllUserProfiles();
+      if (!allUsers[emailKey]) {
+        allUsers[emailKey] = createEmptyUserProfile(emailKey);
+        persistAllUserProfiles(allUsers);
       }
     }
     
@@ -8670,6 +8812,7 @@
       }
       
       loadUserProfile();
+      loadCommunityUsers();
     });
     
     // Profile Mode Management - Make globally accessible
@@ -8898,17 +9041,8 @@
           // CRITICAL: Set profile image and save COMPLETE profile IMMEDIATELY
           user.profileImage = compressed;
           
-          // Save to persistent storage RIGHT NOW
-          const allUsersSave = getAllUserProfiles();
-          allUsersSave[user.email.toLowerCase()] = user;
-          try {
-            localStorage.setItem('poombot_all_users', JSON.stringify(allUsersSave));
-          } catch(e) {
-            // If quota, save only this user
-            const singleUser = {};
-            singleUser[user.email.toLowerCase()] = user;
-            localStorage.setItem('poombot_all_users', JSON.stringify(singleUser));
-          }
+          user.lastUpdated = new Date().toISOString();
+          upsertUserProfile(user);
           
           // Also save to session
           localStorage.setItem('poombot_user', JSON.stringify(user));
@@ -8917,6 +9051,7 @@
           
           // Update profile tab avatar
           updateProfileTabAvatar();
+          loadCommunityUsers();
           
           console.log('✓ Profile image SAVED to persistent storage, length:', compressed.length);
         } catch (err) {
@@ -8929,17 +9064,8 @@
           // CRITICAL: Set profile image and save COMPLETE profile IMMEDIATELY
           user.profileImage = e.target.result;
           
-          // Save to persistent storage RIGHT NOW
-          const allUsersSave = getAllUserProfiles();
-          allUsersSave[user.email.toLowerCase()] = user;
-          try {
-            localStorage.setItem('poombot_all_users', JSON.stringify(allUsersSave));
-          } catch(e) {
-            // If quota, save only this user
-            const singleUser = {};
-            singleUser[user.email.toLowerCase()] = user;
-            localStorage.setItem('poombot_all_users', JSON.stringify(singleUser));
-          }
+          user.lastUpdated = new Date().toISOString();
+          upsertUserProfile(user);
           
           // Also save to session
           localStorage.setItem('poombot_user', JSON.stringify(user));
@@ -8947,6 +9073,7 @@
           localStorage.setItem('poombot_current_email', user.email.toLowerCase());
           
           updateProfileTabAvatar();
+          loadCommunityUsers();
           
           console.log('✓ Profile image SAVED to persistent storage (uncompressed), length:', e.target.result.length);
         }
@@ -9559,25 +9686,25 @@
       let category = '';
       let ageRangeText = '';
       
-      if (birthYear >= 2011 && birthYear <= 2013) {
+      if (birthYear >= 2012 && birthYear <= 2014) {
         // Cadet: 12-14 (born 2011-2013)
         category = 'Cadet';
         ageRange = '12-14';
         ageRangeText = `12-14 (Cadet)`;
-      } else if (birthYear >= 2008 && birthYear <= 2010) {
+      } else if (birthYear >= 2009 && birthYear <= 2011) {
         // Junior: 15-17 (born 2008-2010)
         category = 'Junior';
         ageRange = '15-17';
         ageRangeText = `15-17 (Junior)`;
-      } else if (birthYear <= 2007) {
+      } else if (birthYear <= 2008) {
         // Senior: 18+ (born 2007 or earlier)
         category = 'Senior';
         if (age <= 30) {
-          ageRange = '18-30';
-          ageRangeText = `18-30 (Senior)`;
+          ageRange = 'U30';
+          ageRangeText = `U30 (Senior)`;
         } else {
-          ageRange = 'over30';
-          ageRangeText = `30+ (Senior)`;
+          ageRange = 'O30';
+          ageRangeText = `O30 (Senior)`;
         }
       }
       
@@ -10043,49 +10170,28 @@
           role: profileData.role
         });
         
-        // CRITICAL: Save to persistent storage DIRECTLY - don't rely on setUserSession
-        const allUsersSave = getAllUserProfiles();
-        allUsersSave[profileData.email.toLowerCase()] = profileData;
+        profileData.lastUpdated = new Date().toISOString();
+        upsertUserProfile(profileData);
+        if (profileData.email) {
+          addRegisteredEmail(profileData.email);
+        }
         
         console.log('=== SAVING PROFILE TO PERSISTENT STORAGE ===');
         console.log('Email:', profileData.email);
-        console.log('Total users before save:', Object.keys(allUsersSave).length);
+        console.log('Total users after save:', Object.keys(getAllUserProfiles()).length);
         
-        try {
-          localStorage.setItem('poombot_all_users', JSON.stringify(allUsersSave));
-          
-          // Verify it was saved
-          const verifySave = getAllUserProfiles();
-          console.log('✓ Verification - Total users after save:', Object.keys(verifySave).length);
-          console.log('✓ Verification - Saved profile exists:', !!verifySave[profileData.email.toLowerCase()]);
-          if (verifySave[profileData.email.toLowerCase()]) {
-            console.log('✓ Verification - Saved profile name:', verifySave[profileData.email.toLowerCase()].name);
+        syncToCloud().then(success => {
+          if (success) {
+            console.log('✓ Cloud sync completed after profile save');
+          } else {
+            console.warn('⚠ Cloud sync failed after profile save');
           }
-          
-          // Sync to cloud in background
-          syncToCloud().then(success => {
-            if (success) {
-              console.log('✓ Cloud sync completed after profile save');
-            } else {
-              console.warn('⚠ Cloud sync failed after profile save');
-            }
-          }).catch(err => {
-            console.error('Cloud sync error:', err);
-          });
-          
-          // CRITICAL: Refresh community view to show updated profile
-          // This ensures other users see the latest profile updates
-          setTimeout(() => {
-            if (document.getElementById('community')) {
-              loadCommunityUsers();
-              console.log('✓ Community view refreshed after profile save');
-            }
-          }, 100);
-        } catch(e) {
-          const singleUser = {};
-          singleUser[profileData.email.toLowerCase()] = profileData;
-          localStorage.setItem('poombot_all_users', JSON.stringify(singleUser));
-        }
+        }).catch(err => {
+          console.error('Cloud sync error:', err);
+        });
+        
+        loadCommunityUsers();
+        console.log('✓ Community view refreshed after profile save');
         
         // Also save to session
         localStorage.setItem('poombot_user', JSON.stringify(profileData));
